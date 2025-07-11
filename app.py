@@ -48,6 +48,7 @@ def query_bigquery(sku_val: int, cp_val: int) -> pd.DataFrame:
     AND CP = {cp_val}
     AND NOT (MET_ENTREGA = 'FLOTA LIVERPOOL' AND ZONA_ROJA = 1)
     AND NOT (MET_ENTREGA = 'MENSAJERIA EXTERNA' AND EXCL_PROD != 0)
+    AND INVENTARIO_OH > 0 
     """
     st.info(f"Ejecutando consulta a BigQuery...")
     st.code(query, language="sql") # Shows the SQL query for debugging
@@ -79,13 +80,22 @@ def call_route_api(sku: str, cp: str, qty: int, flag_vn: bool) -> dict:
     try:
         response = requests.post(api_url, headers=headers, json=payload)
         response.raise_for_status() # Raises an exception for HTTP errors (4xx or 5xx)
-        return response.json()
+        
+        json_response = response.json()
+        
+        # Check for the specific error formats from the API
+        if "error" in json_response: # Handles {"error": "..."}
+            return {"api_error_message": json_response['error']} 
+        elif "error:" in json_response: # Handles {"error:": "..."}
+            return {"api_error_message": json_response['error:']}
+        
+        return json_response
     except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar o recibir respuesta de la API de rutas: {e}")
-        return {}
+        # Catch network or HTTP errors
+        return {"api_error_message": f"Error de conexión o HTTP: {e}"}
     except json.JSONDecodeError as e:
-        st.error(f"Error al decodificar la respuesta JSON de la API: {e}. Respuesta: {response.text}")
-        return {}
+        # Catch JSON decoding errors
+        return {"api_error_message": f"Error al decodificar la respuesta JSON de la API: {e}. Respuesta: {response.text}"}
 
 
 # --- Configuración de la Página de Streamlit ---
@@ -135,7 +145,7 @@ if st.button("Consultar Rutas"):
             cp_int = int(cp_input)
             st.session_state.bigquery_df = query_bigquery(sku_int, cp_int)
             # Reset API response when BigQuery is queried again, so previous highlights are removed
-            st.session_state.api_rutas_response = {}
+            st.session_state.api_rutas_response = {} # Clear API response on new BQ query
         except ValueError:
             st.error("Error: SKU y/o Código Postal deben ser valores numéricos enteros para la consulta a BigQuery.")
     else:
@@ -171,7 +181,16 @@ st.markdown("---") # Separador visual
 # --- Sección de Consulta a la API de Rutas ---
 st.header("2. Cálculo de la Mejor Ruta")
 
-if st.button("Calcular Ruta"):
+# Placeholder for the API button to control its position
+api_button_col, _ = st.columns([0.2, 0.8]) # Adjust column width as needed
+with api_button_col:
+    calculate_route_button = st.button("Calcular Ruta")
+
+# Display API error message directly below the button if present
+if st.session_state.api_rutas_response and "api_error_message" in st.session_state.api_rutas_response:
+    st.error(st.session_state.api_rutas_response["api_error_message"])
+
+if calculate_route_button:
     if sku_input and cp_input and qty_input:
         try:
             # Frontend validation for the API inputs
@@ -185,8 +204,8 @@ if st.button("Calcular Ruta"):
     else:
         st.error("Por favor, asegúrate de que SKU, CP y Cantidad estén completos para calcular la ruta.")
 
-# Display API results if available in session state
-if st.session_state.api_rutas_response:
+# Display API results only if there's no specific API error message
+if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     # Presentar los Inputs de la Consulta a la API en una tabla más presentable
     st.subheader("Inputs de la Consulta a la API")
     inputs_data = st.session_state.api_rutas_response.get("inputs", {})
