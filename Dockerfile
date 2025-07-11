@@ -11,8 +11,12 @@ COPY requirements.txt ./
 # Install production dependencies.
 RUN pip install -r requirements.txt
 
-# Run the web service on container startup. Here we use the gunicorn
-# webserver, with one worker process and 8 threads.
-# For environments with multiple CPU cores, increase the number of workers
-# to be equal to the cores available.
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
+# Expone el puerto en el que Streamlit se ejecutará
+# Cloud Run requiere que tu aplicación escuche en el puerto especificado por la variable de entorno PORT
+ENV PORT 8080
+EXPOSE 8080
+
+# Comando para ejecutar la aplicación Streamlit
+# --server.port $PORT asegura que Streamlit escuche en el puerto correcto de Cloud Run
+# --server.enableCORS false y --server.enableXsrfProtection false son necesarios para Streamlit en Cloud Run
+CMD ["streamlit", "run", "app.py", "--server.port", "8080", "--server.enableCORS", "false", "--server.enableXsrfProtection", "false"]
