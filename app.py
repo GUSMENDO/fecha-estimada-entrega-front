@@ -5,6 +5,19 @@ import requests # Para hacer llamadas a la API
 import datetime # Para trabajar con fechas
 import calendar # Para generar el calendario
 
+# --- Importaciones de Google Cloud ---
+# Se envuelven en un try-except para manejar posibles errores de importación
+try:
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+except ImportError as e:
+    st.error(f"Error: No se pudieron importar las librerías de Google Cloud (bigquery, google.oauth2). "
+             f"Por favor, asegúrate de que estén instaladas: `pip install google-cloud-bigquery google-auth`. "
+             f"Detalle: {e}")
+    # Se asigna None a los módulos para evitar NameError si la importación falla
+    bigquery = None
+    service_account = None
+
 # --- Conexión a BigQuery ---
 # Asegúrate de que tu entorno esté autenticado con Google Cloud.
 # Por ejemplo, usando `gcloud auth application-default login` en tu terminal,
@@ -16,6 +29,11 @@ def get_bigquery_client():
     """
     Initializes and returns the BigQuery client.
     """
+    # Verifica si el módulo bigquery se importó correctamente
+    if bigquery is None:
+        # El mensaje de error ya fue mostrado por el bloque ImportError
+        return None
+    
     try:
         client = bigquery.Client()
         return client
