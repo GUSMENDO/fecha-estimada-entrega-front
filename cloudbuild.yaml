@@ -1,7 +1,7 @@
   steps:
   - name: gcr.io/cloud-builders/docker
     args:
-      ["build", '--no-cache', "-t", "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front-front", "./"]
+      ["build", '--no-cache', "-t", "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front", "./"]
 
   - name: "gcr.io/cloud-builders/docker"
     args: ["push", "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front"]
