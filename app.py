@@ -290,22 +290,22 @@ if calculate_route_button:
 if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     st.subheader("Visualización de Fechas Clave")
 
-    fecha_compra = datetime.date(2025, 6, 1) # Fixed purchase date (June 1, 2025)
+    fecha_compra = datetime.date(2025, 6, 2) # Fixed purchase date (June 1, 2025)
     fecha_entrega = None
     
     # Get fecha_de_entrega from resumen instead of EDD1 from rutas
     if st.session_state.api_rutas_response.get("resumen"):
         resumen_data = st.session_state.api_rutas_response["resumen"]
-        if "fecha_de_entrega" in resumen_data: # Assuming this key exists in resumen
+        # Prioritize 'fecha_de_entrega' if it exists in resumen
+        if "fecha_de_entrega" in resumen_data: 
             try:
                 # Convert 'YYYY-MM-DD' string to datetime.date object
-                fecha_entrega = datetime.datetime.strptime(resumen_data["fecha_de_entrega"], "%Y-%m-%d").date()
+                fecha_entrega = datetime.datetime.strptime(str(resumen_data["fecha_de_entrega"]), "%Y-%m-%d").date()
             except ValueError:
                 st.warning("Formato de fecha de entrega (fecha_de_entrega) inválido en la respuesta de la API. Se esperaba 'YYYY-MM-DD'.")
         elif "tiempo_maximo_dias" in resumen_data: # Fallback if fecha_de_entrega is not direct
             # If fecha_de_entrega is not directly available, but tiempo_maximo_dias is,
             # we can approximate the delivery date from purchase date + days.
-            # This is an assumption based on typical API responses.
             delivery_days = resumen_data["tiempo_maximo_dias"]
             fecha_entrega = fecha_compra + datetime.timedelta(days=delivery_days)
             st.info(f"Fecha de entrega aproximada calculada a partir de tiempo_maximo_dias: {fecha_entrega.strftime('%d-%B-%Y')}")
@@ -372,6 +372,8 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             justify-content: center;
             align-items: center;
             min-height: 50px; /* Ensure consistent height */
+            position: relative; /* Needed for absolute positioning of labels */
+            overflow: hidden; /* Hide overflow for split background */
         }}
         .calendar-day.empty {{
             background-color: transparent;
@@ -388,6 +390,25 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             color: #ffffff;
             font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
+        }}
+        .calendar-day.highlight-both {{
+            background: linear-gradient(to right, #8B0000 50%, #006400 50%); /* Split color background */
+            color: #ffffff; /* Default text color for the day number */
+            font-weight: bold;
+            box-shadow: 0 0 8px rgba(0, 100, 0, 0.5), 0 0 8px rgba(139, 0, 0, 0.5); /* Combined shadow */
+        }}
+        .calendar-day .label-container {{
+            display: flex;
+            width: 100%;
+            justify-content: center; /* Center the combined text */
+            font-size: 0.65em; /* Smaller font for labels */
+            line-height: 1;
+            margin-top: 5px; /* Space between day number and labels */
+        }}
+        .calendar-day .label-combined {{
+            color: #ffffff; /* White text for combined label */
+            font-weight: bold;
+            text-align: center;
         }}
         /* Responsive adjustments */
         @media (max-width: 600px) {{
@@ -418,23 +439,34 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
     for week in month_cal:
         for day in week:
             day_classes = "calendar-day"
-            day_content = str(day) if day != 0 else ""
+            day_number_content = str(day) if day != 0 else ""
+            label_content = ""
 
             current_date = None
             if day != 0:
                 current_date = datetime.date(display_year, display_month, day)
 
-            if current_date == fecha_compra:
+            if current_date == fecha_compra and current_date == fecha_entrega:
+                day_classes += " highlight-both"
+                label_content = f"""
+                <div class="label-container">
+                    <span class="label-combined">Mismo Día</span>
+                </div>
+                """
+            elif current_date == fecha_compra:
                 day_classes += " highlight-purchase"
-                day_content += "<br><small>Compra</small>"
+                label_content = "<small>Compra</small>"
             elif fecha_entrega and current_date == fecha_entrega:
                 day_classes += " highlight-delivery"
-                day_content += "<br><small>Entrega</small>"
+                label_content = "<small>Entrega</small>"
             elif day == 0:
                 day_classes += " empty"
-                day_content = "" # No content for empty days
+                day_number_content = "" # No content for empty days
 
-            calendar_html += f'<div class="{day_classes}">{day_content}</div>'
+            # Combine day number and labels
+            final_day_content = f"{day_number_content}{label_content}" if day != 0 else ""
+            
+            calendar_html += f'<div class="{day_classes}">{final_day_content}</div>'
 
     calendar_html += """
         </div>
