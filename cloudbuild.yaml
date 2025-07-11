@@ -1,0 +1,26 @@
+  steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      ["build", '--no-cache', "-t", "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front-front", "./"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front"]
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      [
+        "run",
+        "deploy",
+        "cloudrun-service-fee-front",
+        "--image",
+        "gcr.io/${_PROJECT_ID}/cloudrun-service-fee-front",
+        "--region",
+        "us-east4",
+        "--platform",
+        "managed",
+        "--service-account",
+        "${_SERVICE_ACCOUNT}",
+      ]
+options:
+  logging: CLOUD_LOGGING_ONLY
+  default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET

@@ -1,0 +1,73 @@
+Arma un frondend en python que pueda hacer una consulta a bigquery con los siguientes inputs
+
+"sku": "1139002876",
+"cp":"52715",
+
+este es la tabla y el query para ir por los datos
+project_id = 'liv-dev-dig-chatbot'
+    dataset_id = 'Fecha_Estimada_Entrega'
+    source_table_id = 'TB_FEE_RESULTADO_FINAL__tmp'
+
+    source_table = f"{project_id}.{dataset_id}.{source_table_id}"
+
+    query = f"""
+    SELECT * FROM `{source_table}`
+    WHERE 1=1
+    AND SKU_CVE = {sku}
+    AND CP = {cp}
+    AND NOT (MET_ENTREGA = 'FLOTA LIVERPOOL' AND ZONA_ROJA = 1)
+    AND NOT (MET_ENTREGA = 'MENSAJERIA EXTERNA' AND EXCL_PROD != 0)
+    """
+
+cuando seleccionen tienes que mostrar los resultados en una tabla en la vista, posteriormente quiero hacer la consulta a una api
+para poder calcular la mejor ruta con base en estos, tienes que marcar las rutas que te regrese la API en algun tipo de color, pero debes mantener toda la info de la consulta
+
+"sku": "1139002876",
+"cp":"52715",
+"qty": 20,
+"flag_vn": false
+
+Este es el response
+
+{
+    "inputs": {
+        "sku": "1139002876",
+        "qty": 20,
+        "cp": "52715",
+        "flag_vn": false,
+        "weights": "inventario:0.5 ,tiempo:1.0, costo:2.0, nodo:0.5, ruta:0.5"
+    },
+    "rutas": [
+        {
+            "id_trazo": "R7011611",
+            "qty": 20,
+            "EDD1": "2025-07-14",
+            "tiempo": 3,
+            "costo": 55,
+            "tienda": 417
+        }
+    ],
+    "resumen": {
+        "tiempo_procesamiento": 55,
+        "suma_costo_unitario": 55,
+        "tiempo_maximo_dias": 3,
+        "cantidad_rutas_utilizadas": 1,
+        "estado_modelo": "Optimal"
+    }
+}
+
+este es el contrato de la API
+
+curl --location 'https://cloudrun-service-fee-316812040520.us-east4.run.app/fecha-estimada-entrega' \
+--header 'Content-Type: application/json' \
+--data '{
+    "sku": "1139002876",
+    "cp":"52715",
+    "qty": 20,
+    "flag_vn": false
+}'
+
+debes de tomar las rutas y el id_trazo para marcar las rutas que selecciono
+
+tambien dame el resumen en alguna parte del front
+
