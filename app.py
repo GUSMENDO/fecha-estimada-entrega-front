@@ -139,8 +139,8 @@ qty_input = st.sidebar.number_input("Cantidad (QTY)", value=2, min_value=1, help
 st.sidebar.markdown("---")
 st.sidebar.header("Pesos de Optimización (Weights)")
 
-# Define default weights
-DEFAULT_WEIGHTS = {
+# Define default weights (Temporada Baja)
+DEFAULT_WEIGHTS_BAJA = {
     "inventario": 0.5,
     "tiempo": 1.0,
     "costo": 2.0,
@@ -148,20 +148,39 @@ DEFAULT_WEIGHTS = {
     "ruta": 0.5
 }
 
-# Callback function to reset weights
-def reset_weights_callback():
-    for key, value in DEFAULT_WEIGHTS.items():
+# Define weights for Temporada Alta
+DEFAULT_WEIGHTS_ALTA = {
+    "inventario": 0.4,
+    "tiempo": 2.0,
+    "costo": 0.1,
+    "nodo": 0.5,
+    "ruta": 0.5
+}
+
+# Callback function to reset weights to Temporada Baja
+def reset_weights_baja_callback():
+    for key, value in DEFAULT_WEIGHTS_BAJA.items():
         st.session_state[key] = value
     st.session_state.show_reset_message = True # Set flag to show success message
+    st.session_state.reset_message_text = "Pesos ajustados a Temporada Baja."
+
+# Callback function to set weights to Temporada Alta
+def set_weights_alta_callback():
+    for key, value in DEFAULT_WEIGHTS_ALTA.items():
+        st.session_state[key] = value
+    st.session_state.show_reset_message = True # Set flag to show success message
+    st.session_state.reset_message_text = "Pesos ajustados a Temporada Alta."
 
 # Initialize session state for weights if not already present
-for key, value in DEFAULT_WEIGHTS.items():
+for key, value in DEFAULT_WEIGHTS_BAJA.items(): # Initialize with Baja defaults
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Initialize session state for the reset message flag
+# Initialize session state for the reset message flag and text
 if 'show_reset_message' not in st.session_state:
     st.session_state.show_reset_message = False
+if 'reset_message_text' not in st.session_state:
+    st.session_state.reset_message_text = ""
 
 # Sliders for weights using session state
 inventario_weight = st.sidebar.slider("Inventario", min_value=0.0, max_value=2.0, value=st.session_state.inventario, step=0.1, key='inventario', help="Peso para la optimización por inventario.")
@@ -170,12 +189,14 @@ costo_weight = st.sidebar.slider("Costo", min_value=0.0, max_value=2.0, value=st
 nodo_weight = st.sidebar.slider("Nodo", min_value=0.0, max_value=2.0, value=st.session_state.nodo, step=0.1, key='nodo', help="Peso para la optimización por nodo.")
 ruta_weight = st.sidebar.slider("Ruta", min_value=0.0, max_value=2.0, value=st.session_state.ruta, step=0.1, key='ruta', help="Peso para la optimización por ruta.")
 
-# Reset weights button with callback
-st.sidebar.button("Restablecer Pesos", on_click=reset_weights_callback)
+# Reset weights buttons with callbacks
+st.sidebar.button("Temporada Baja", on_click=reset_weights_baja_callback)
+st.sidebar.button("Temporada Alta", on_click=set_weights_alta_callback)
+
 
 # Display reset success message if flag is true
 if st.session_state.show_reset_message:
-    st.sidebar.success("Pesos ajustados a default.")
+    st.sidebar.success(st.session_state.reset_message_text)
     # Reset the flag so the message disappears on the next rerun (e.g., user interaction)
     st.session_state.show_reset_message = False
 
@@ -290,7 +311,7 @@ if calculate_route_button:
 if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     st.subheader("Visualización de Fechas Clave")
 
-    fecha_compra = datetime.date(2025, 6, 2) # Fixed purchase date (June 1, 2025)
+    fecha_compra = datetime.date(2025, 6, 1) # Fixed purchase date (June 1, 2025)
     fecha_entrega = None
     
     # Get fecha_de_entrega from resumen instead of EDD1 from rutas
@@ -392,7 +413,7 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
         }}
         .calendar-day.highlight-both {{
-            background: linear-gradient(to right, #8B0000 50%, #006400 50%); /* Split color background */
+            background: linear-gradient(to bottom, #8B0000 50%, #006400 50%); /* Split color background - horizontal */
             color: #ffffff; /* Default text color for the day number */
             font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 100, 0, 0.5), 0 0 8px rgba(139, 0, 0, 0.5); /* Combined shadow */
