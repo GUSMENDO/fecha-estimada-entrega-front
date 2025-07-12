@@ -311,7 +311,7 @@ if calculate_route_button:
 if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     st.subheader("Visualización de Fechas Clave")
 
-    fecha_compra = datetime.date(2025, 6, 1) # Fixed purchase date (June 1, 2025)
+    fecha_compra = datetime.date(2025, 6, 2) # Fixed purchase date (June 2, 2025)
     fecha_entrega = None
     
     # Get fecha_de_entrega from resumen instead of EDD1 from rutas
