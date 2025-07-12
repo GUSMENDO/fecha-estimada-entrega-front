@@ -163,6 +163,8 @@ def reset_weights_baja_callback():
         st.session_state[key] = value
     st.session_state.show_reset_message = True # Set flag to show success message
     st.session_state.reset_message_text = "Pesos ajustados a Temporada Baja."
+    st.session_state.current_preset = 'baja' # Set preset state
+    st.rerun() # Rerun to update sliders and preset status
 
 # Callback function to set weights to Temporada Alta
 def set_weights_alta_callback():
@@ -170,6 +172,8 @@ def set_weights_alta_callback():
         st.session_state[key] = value
     st.session_state.show_reset_message = True # Set flag to show success message
     st.session_state.reset_message_text = "Pesos ajustados a Temporada Alta."
+    st.session_state.current_preset = 'alta' # Set preset state
+    st.rerun() # Rerun to update sliders and preset status
 
 # Initialize session state for weights if not already present
 for key, value in DEFAULT_WEIGHTS_BAJA.items(): # Initialize with Baja defaults
@@ -181,6 +185,8 @@ if 'show_reset_message' not in st.session_state:
     st.session_state.show_reset_message = False
 if 'reset_message_text' not in st.session_state:
     st.session_state.reset_message_text = ""
+if 'current_preset' not in st.session_state:
+    st.session_state.current_preset = 'baja' # Default to Temporada Baja
 
 # Sliders for weights using session state
 inventario_weight = st.sidebar.slider("Inventario", min_value=0.0, max_value=2.0, value=st.session_state.inventario, step=0.1, key='inventario', help="Peso para la optimización por inventario.")
@@ -188,6 +194,36 @@ tiempo_weight = st.sidebar.slider("Tiempo", min_value=0.0, max_value=2.0, value=
 costo_weight = st.sidebar.slider("Costo", min_value=0.0, max_value=2.0, value=st.session_state.costo, step=0.1, key='costo', help="Peso para la optimización por costo.")
 nodo_weight = st.sidebar.slider("Nodo", min_value=0.0, max_value=2.0, value=st.session_state.nodo, step=0.1, key='nodo', help="Peso para la optimización por nodo.")
 ruta_weight = st.sidebar.slider("Ruta", min_value=0.0, max_value=2.0, value=st.session_state.ruta, step=0.1, key='ruta', help="Peso para la optimización por ruta.")
+
+# Check if current slider values match any preset or are custom
+current_slider_values = {
+    "inventario": inventario_weight,
+    "tiempo": tiempo_weight,
+    "costo": costo_weight,
+    "nodo": nodo_weight,
+    "ruta": ruta_weight
+}
+
+# Use a small tolerance for float comparison
+tolerance = 1e-9
+is_baja = all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_BAJA[k]) < tolerance for k in DEFAULT_WEIGHTS_BAJA)
+is_alta = all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_ALTA[k]) < tolerance for k in DEFAULT_WEIGHTS_ALTA)
+
+# Determine current preset state (needs to be done after sliders are read)
+if is_baja:
+    st.session_state.current_preset = 'baja'
+elif is_alta:
+    st.session_state.current_preset = 'alta'
+else:
+    st.session_state.current_preset = 'custom'
+
+# Display preset status with conditional styling
+if st.session_state.current_preset == 'baja':
+    st.sidebar.markdown("<p style='color: #87CEEB; font-weight: bold;'>Preset activo: Temporada Baja</p>", unsafe_allow_html=True)
+elif st.session_state.current_preset == 'alta':
+    st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Preset activo: Temporada Alta</p>", unsafe_allow_html=True)
+else:
+    st.sidebar.warning("Pesos: **Custom** (no coinciden con presets)")
 
 # Reset weights buttons with callbacks
 st.sidebar.button("Temporada Baja", on_click=reset_weights_baja_callback)
@@ -208,6 +244,8 @@ if 'api_rutas_response' not in st.session_state:
     st.session_state.api_rutas_response = {}
 if 'bigquery_query_attempted' not in st.session_state: # Initialize the flag
     st.session_state.bigquery_query_attempted = False
+if 'scroll_to_bigquery_table' not in st.session_state: # Flag for scrolling
+    st.session_state.scroll_to_bigquery_table = False
 
 # --- Sección de Consulta a BigQuery ---
 st.header("1. Resultados de Rutas")
@@ -242,6 +280,10 @@ if st.button("Consultar Rutas"):
 if not st.session_state.bigquery_df.empty:
     st.subheader("Datos de Inventario y Ubicación")
     st.write(f"Número de registros: **{len(st.session_state.bigquery_df)}**") # Add count here
+    
+    # Anchor for scrolling
+    st.markdown("<div id='bigquery_table_anchor'></div>", unsafe_allow_html=True)
+
     # Determine which trace IDs to highlight from the API response stored in session state
     selected_trace_ids = set()
     if st.session_state.api_rutas_response and st.session_state.api_rutas_response.get("rutas"):
@@ -300,18 +342,37 @@ if calculate_route_button:
             st.session_state.api_rutas_response = call_route_api(
                 sku_input, cp_input, qty_input, weights_payload
             )
-            # Rerun the app to re-render the BigQuery table with new highlights
+            st.session_state.scroll_to_bigquery_table = True # Set flag to scroll
             st.rerun()
         except ValueError:
             st.error("Error: SKU y/o Código Postal deben ser valores numéricos enteros para calcular la ruta.")
     else:
         st.error("Por favor, asegúrate de que SKU, CP y Cantidad estén completos para calcular la ruta.")
 
+# Scroll to the table if the flag is set
+if st.session_state.get('scroll_to_bigquery_table', False):
+    st.markdown(
+        """
+        <script>
+            // Use a small timeout to ensure the DOM element is rendered
+            setTimeout(function() {
+                var element = document.getElementById('bigquery_table_anchor');
+                if (element) {
+                    element.scrollIntoView({behavior: 'smooth', block: 'start'});
+                }
+            }, 100); // Small delay, e.g., 100ms
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+    st.session_state.scroll_to_bigquery_table = False # Reset the flag after attempting to scroll
+
+
 # --- Nueva sección de Calendario ---
 if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     st.subheader("Visualización de Fechas Clave")
 
-    fecha_compra = datetime.date(2025, 6, 2) # Fixed purchase date (June 2, 2025)
+    fecha_compra = datetime.date(2025, 6, 2) # Fixed purchase date (June 1, 2025)
     fecha_entrega = None
     
     # Get fecha_de_entrega from resumen instead of EDD1 from rutas
@@ -413,7 +474,7 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
         }}
         .calendar-day.highlight-both {{
-            background: linear-gradient(to bottom, #8B0000 50%, #006400 50%); /* Split color background - horizontal */
+            background: linear-gradient(to right, #8B0000 50%, #006400 50%); /* Split color background - horizontal */
             color: #ffffff; /* Default text color for the day number */
             font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 100, 0, 0.5), 0 0 8px rgba(139, 0, 0, 0.5); /* Combined shadow */
@@ -509,7 +570,19 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
     st.subheader("Inputs de la Consulta a la API")
     inputs_data = st.session_state.api_rutas_response.get("inputs", {})
     if inputs_data:
-        inputs_df = pd.DataFrame(inputs_data.items(), columns=['Variable', 'Valor'])
+        # Create a list to hold all rows for the DataFrame
+        all_input_rows = []
+        for key, value in inputs_data.items():
+            if key == "weights" and isinstance(value, dict):
+                # If 'weights' is a dictionary, add each of its items as separate rows
+                for weight_key, weight_value in value.items():
+                    all_input_rows.append([f"{weight_key}", weight_value])
+            else:
+                # For other keys, add them as regular rows
+                all_input_rows.append([key, value])
+        
+        inputs_df = pd.DataFrame(all_input_rows, columns=['Variable', 'Valor'])
+        
         st.dataframe(
             inputs_df,
             hide_index=True, # Hide index for this table
