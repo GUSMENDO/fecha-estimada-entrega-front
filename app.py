@@ -116,7 +116,7 @@ DEFAULT_WEIGHTS_BAJA = {
 }
 DEFAULT_WEIGHTS_ALTA = {
     "inventario": 0.4, "tiempo": 2.0, "costo": 0.1, "nodo": 0.5, "ruta": 0.5, 
-    "diferencia": 4.0 # Default for when recalculation is ON
+    "diferencia": 4.0 # Default for when recalculation is ON, set to 4.0
 }
 
 # Callback functions to reset weights to presets
@@ -159,7 +159,7 @@ if st.sidebar.button("Activar Recálculo" if not st.session_state.recalculo_enab
         st.session_state.costo = DEFAULT_WEIGHTS_ALTA["costo"]
         st.session_state.nodo = DEFAULT_WEIGHTS_ALTA["nodo"]
         st.session_state.ruta = DEFAULT_WEIGHTS_ALTA["ruta"]
-        st.session_state.diferencia = 4.0 # Explicitly set to 2.0 for recalculo mode
+        st.session_state.diferencia = 4.0 # Explicitly set to 4.0 for recalculo mode
         st.session_state.current_preset = 'recalc_active' # Custom preset state for recalculo
     else:
         # Revert to Temporada Baja defaults when recalculo is off
@@ -182,8 +182,9 @@ if st.session_state.recalculo_enabled:
     st.sidebar.text_input("Fecha Compra Original (AAAA-MM-DD)", value=fecha_compra_original_date_fixed.strftime("%Y-%m-%d"), disabled=True, help="Fecha original de compra para el recálculo (no editable).")
     
     # Fecha Entrega Original - Calendar Input
+    # Set default to a date different from purchase for better testing of logic
     if 'fecha_entrega_original_recalculo' not in st.session_state:
-        st.session_state.fecha_entrega_original_recalculo = datetime.date(2025, 6, 5) # Default date for calendar
+        st.session_state.fecha_entrega_original_recalculo = datetime.date(2025, 6, 12) # Default date for calendar
 
     fecha_entrega_original_date = st.sidebar.date_input("Fecha Entrega Original (AAAA-MM-DD)", value=st.session_state.fecha_entrega_original_recalculo, help="Fecha original de entrega para el recálculo.")
     st.session_state.fecha_entrega_original_recalculo = fecha_entrega_original_date # Update session state on selection
@@ -364,8 +365,8 @@ if st.session_state.api_rutas_response and "api_error_message" in st.session_sta
 if calculate_route_button:
     if sku_input and cp_input and qty_input:
         try:
-            sku_int = int(sku_input)
-            cp_int = int(cp_input)
+            int(sku_input)
+            int(cp_input)
 
             # --- Validation for Fecha Entrega Original vs Fecha Compra Original ---
             if st.session_state.recalculo_enabled:
@@ -476,11 +477,23 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
 
     cal = calendar.Calendar(firstweekday=6)
     
+    # Determine the year and month to display in the calendar, prioritizing dates
     display_year = fecha_compra.year
     display_month = fecha_compra.month
-    if new_fecha_entrega and (new_fecha_entrega.year != fecha_compra.year or new_fecha_entrega.month != fecha_compra.month):
-        display_year = new_fecha_entrega.year
-        display_month = new_fecha_entrega.month
+
+    dates_to_consider = [fecha_compra]
+    if new_fecha_entrega:
+        dates_to_consider.append(new_fecha_entrega)
+    if fecha_entrega_original_date and st.session_state.recalculo_enabled:
+        dates_to_consider.append(fecha_entrega_original_date)
+    
+    # Find the earliest and latest month/year to span the calendar view
+    if dates_to_consider:
+        min_date = min(dates_to_consider)
+        max_date = max(dates_to_consider)
+        # Display month that spans all relevant dates or the first relevant month
+        display_year = min_date.year
+        display_month = min_date.month
 
     month_cal = cal.monthdayscalendar(display_year, display_month)
 
@@ -521,6 +534,10 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             background-color: #006400; color: #ffffff; font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
         }}
+        .calendar-day.highlight-original-delivery {{ /* New green for original delivery in recalc mode */
+            background-color: #006400; color: #ffffff; font-weight: bold;
+            box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
+        }}
         .calendar-day.highlight-both {{ /* Original red+green for non-recalc same day */
             background: linear-gradient(to right, #8B0000 50%, #006400 50%);
             color: #ffffff; font-weight: bold;
@@ -547,6 +564,19 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             color: #000000; /* Black text for better contrast on yellow side */
             text-shadow: 1px 1px 2px rgba(255,255,255,0.8); /* Optional: add shadow for readability */
         }}
+        /* Color boxes for legend */
+        .color-box {{
+            width: 15px;
+            height: 15px;
+            border: 1px solid #ccc;
+            display: inline-block;
+            margin-right: 5px;
+            vertical-align: middle;
+        }}
+        .color-box.red {{ background-color: #8B0000; }}
+        .color-box.green {{ background-color: #006400; }}
+        .color-box.yellow {{ background-color: #FFD700; }}
+
         @media (max-width: 600px) {{
             .calendar-day {{
                 min-height: 40px; font-size: 0.8em;
@@ -592,11 +622,23 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
                         day_classes += " highlight-recalc-new-delivery"
                         label_content = "<small class='label-text'>Nueva Entrega</small>"
                     
-                    # Purchase date always gets highlighted if it's not already covered by new/same delivery
-                    if is_purchase_date and not (is_new_delivery_date and is_original_delivery_date_input) and not is_new_delivery_date:
-                         day_classes += " highlight-purchase"
-                         if not label_content: # Only add if no other label is present
-                             label_content = "<small>Compra</small>"
+                    # Highlight original delivery in green if it's not the new delivery date
+                    if is_original_delivery_date_input and not is_new_delivery_date:
+                        if "highlight-original-delivery" not in day_classes:
+                            day_classes += " highlight-original-delivery"
+                        if not label_content:
+                            label_content = "<small>Entrega Original</small>"
+                        elif "Entrega Original" not in label_content:
+                            label_content += "<br><small>Entrega Original</small>"
+                            
+                    # Purchase date always gets highlighted if not already covered by higher priority
+                    if is_purchase_date and "highlight-purchase" not in day_classes and "highlight-recalc-new-delivery" not in day_classes and "highlight-recalc-same-date" not in day_classes:
+                        day_classes += " highlight-purchase"
+                        if not label_content:
+                            label_content = "<small>Compra</small>"
+                        elif "Compra" not in label_content: # Append if another label is there
+                             label_content += "<br><small>Compra</small>"
+
 
                 else: # Recalculo is OFF (original logic)
                     if is_purchase_date and is_new_delivery_date:
@@ -623,14 +665,22 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
     """
     st.markdown(calendar_html, unsafe_allow_html=True)
 
-    st.markdown(f"**Fecha de Compra:** {fecha_compra.strftime('%d-%B-%Y')}")
-    if new_fecha_entrega:
-        st.markdown(f"**Fecha de Entrega (API):** {new_fecha_entrega.strftime('%d-%B-%Y')}")
-    else:
-        st.markdown("**Fecha de Entrega (API):** No disponible o formato inválido en la API.")
+    # Date Legend
+    st.markdown("---")
+    st.markdown("**Leyenda de Fechas:**")
+    st.markdown(f'<div class="color-box red"></div> **Roja** Fecha de Compra: {fecha_compra.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
     
     if st.session_state.recalculo_enabled and fecha_entrega_original_date:
-        st.markdown(f"**Fecha de Entrega Original (Input):** {fecha_entrega_original_date.strftime('%d-%B-%Y')}")
+        st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega Original: {fecha_entrega_original_date.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+        if new_fecha_entrega:
+            st.markdown(f'<div class="color-box yellow"></div> **Amarillo** NUEVA Fecha de Entrega: {new_fecha_entrega.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="color-box yellow"></div> **Amarillo** NUEVA Fecha de Entrega: No disponible', unsafe_allow_html=True)
+    elif new_fecha_entrega: # Non-recalulo mode, regular delivery date
+        st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega: {new_fecha_entrega.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="color-box green"></div> **Verde** Fecha de Entrega: No disponible', unsafe_allow_html=True)
+
 
     st.markdown("---")
     
