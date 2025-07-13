@@ -108,55 +108,18 @@ st.set_page_config(
 st.title("Consulta de Rutas y Fecha Estimada de Entrega")
 st.markdown("Esta aplicación te permite consultar información de Rutas y calcular las mejores Rutas de entrega a través de una API.")
 
-# --- Inputs Section ---
-st.sidebar.header("Parámetros de Consulta")
-
-sku_input = st.sidebar.text_input("SKU", value="1139002876", help="Product identification number.")
-cp_input = st.sidebar.text_input("Código Postal (CP)", value="52715", help="Postal code for the query.")
-qty_input = st.sidebar.number_input("Cantidad (QTY)", value=2, min_value=1, help="Quantity of product units.")
-
-st.sidebar.markdown("---")
-st.sidebar.header("Opciones de Recálculo")
-
-if 'recalculo_enabled' not in st.session_state:
-    st.session_state.recalculo_enabled = False
-
-if st.sidebar.button("Activar Recálculo" if not st.session_state.recalculo_enabled else "Desactivar Recálculo"):
-    st.session_state.recalculo_enabled = not st.session_state.recalculo_enabled
-    st.rerun()
-
-if st.session_state.recalculo_enabled:
-    st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Recálculo Activado</p>", unsafe_allow_html=True)
-    
-    # Fecha Compra Original - Fixed and Read-Only
-    fecha_compra_original_date = datetime.date(2025, 6, 2)
-    st.sidebar.text_input("Fecha Compra Original (AAAA-MM-DD)", value=fecha_compra_original_date.strftime("%Y-%m-%d"), disabled=True, help="Fecha original de compra para el recálculo (no editable).")
-    
-    # Fecha Entrega Original - Calendar Input
-    if 'fecha_entrega_original' not in st.session_state:
-        st.session_state.fecha_entrega_original = datetime.date(2025, 6, 11) # Default date for calendar
-
-    fecha_entrega_original_date = st.sidebar.date_input("Fecha Entrega Original (AAAA-MM-DD)", value=st.session_state.fecha_entrega_original, help="Fecha original de entrega para el recálculo.")
-    st.session_state.fecha_entrega_original = fecha_entrega_original_date # Update session state on selection
-
-    tienda_rechazo = st.sidebar.number_input("Tienda de Rechazo", value=108, min_value=0, help="ID de la tienda que rechazó el envío.")
-else:
-    st.sidebar.info("Recálculo Desactivado. Haz clic en el botón para activar más opciones.")
-    fecha_compra_original_date = datetime.date(2025, 6, 1) # Keep default for API payload even if not displayed
-    fecha_entrega_original_date = None
-    tienda_rechazo = None
-
-
-st.sidebar.markdown("---")
-st.sidebar.header("Pesos de Optimización (Weights)")
-
+# --- Definiciones de Pesos y Callbacks ---
+# Define default weights
 DEFAULT_WEIGHTS_BAJA = {
-    "inventario": 0.5, "tiempo": 1.0, "costo": 2.0, "nodo": 0.5, "ruta": 0.5, "diferencia": 0.0
+    "inventario": 0.5, "tiempo": 1.0, "costo": 2.0, "nodo": 0.5, "ruta": 0.5, 
+    "diferencia": 0.0 # Default for when recalculation is OFF
 }
 DEFAULT_WEIGHTS_ALTA = {
-    "inventario": 0.4, "tiempo": 2.0, "costo": 0.1, "nodo": 0.5, "ruta": 0.5, "diferencia": 2.0
+    "inventario": 0.4, "tiempo": 2.0, "costo": 0.1, "nodo": 0.5, "ruta": 0.5, 
+    "diferencia": 2.0 # Default for when recalculation is ON
 }
 
+# Callback functions to reset weights to presets
 def reset_weights_baja_callback():
     for key, value in DEFAULT_WEIGHTS_BAJA.items():
         st.session_state[key] = value
@@ -173,6 +136,68 @@ def set_weights_alta_callback():
     st.session_state.current_preset = 'alta'
     st.rerun()
 
+# --- Sección de Inputs ---
+st.sidebar.header("Parámetros de Consulta")
+
+sku_input = st.sidebar.text_input("SKU", value="1139002876", help="Product identification number.")
+cp_input = st.sidebar.text_input("Código Postal (CP)", value="52715", help="Postal code for the query.")
+qty_input = st.sidebar.number_input("Cantidad (QTY)", value=2, min_value=1, help="Quantity of product units.")
+
+st.sidebar.markdown("---")
+st.sidebar.header("Opciones de Recálculo")
+
+if 'recalculo_enabled' not in st.session_state:
+    st.session_state.recalculo_enabled = False
+
+if st.sidebar.button("Activar Recálculo" if not st.session_state.recalculo_enabled else "Desactivar Recálculo"):
+    st.session_state.recalculo_enabled = not st.session_state.recalculo_enabled
+    # When toggling recalculation, adjust weights in session_state immediately
+    if st.session_state.recalculo_enabled:
+        # Set all weights to Temporada Alta values, and diferencia to 2.0
+        st.session_state.inventario = DEFAULT_WEIGHTS_ALTA["inventario"]
+        st.session_state.tiempo = DEFAULT_WEIGHTS_ALTA["tiempo"]
+        st.session_state.costo = DEFAULT_WEIGHTS_ALTA["costo"]
+        st.session_state.nodo = DEFAULT_WEIGHTS_ALTA["nodo"]
+        st.session_state.ruta = DEFAULT_WEIGHTS_ALTA["ruta"]
+        st.session_state.diferencia = 2.0 # Explicitly set to 2.0 for recalculo mode
+        st.session_state.current_preset = 'recalc_active' # Custom preset state for recalculo
+    else:
+        # Revert to Temporada Baja defaults when recalculo is off
+        for key, value in DEFAULT_WEIGHTS_BAJA.items():
+            st.session_state[key] = value
+        st.session_state.diferencia = 0.0 # Explicitly set to 0.0 when recalculo is off
+        st.session_state.current_preset = 'baja' # Default back to Baja preset state
+
+    st.rerun() # Rerun to update sidebar inputs and sliders
+
+# Variables to hold recalculation input values
+fecha_compra_original_date_fixed = datetime.date(2025, 6, 2)
+fecha_entrega_original_date = None
+tienda_rechazo = None
+
+if st.session_state.recalculo_enabled:
+    st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Recálculo Activado</p>", unsafe_allow_html=True)
+    
+    # Fecha Compra Original - Fixed and Read-Only
+    st.sidebar.text_input("Fecha Compra Original (AAAA-MM-DD)", value=fecha_compra_original_date_fixed.strftime("%Y-%m-%d"), disabled=True, help="Fecha original de compra para el recálculo (no editable).")
+    
+    # Fecha Entrega Original - Calendar Input
+    if 'fecha_entrega_original_recalculo' not in st.session_state:
+        st.session_state.fecha_entrega_original_recalculo = datetime.date(2025, 6, 5) # Default date for calendar
+
+    fecha_entrega_original_date = st.sidebar.date_input("Fecha Entrega Original (AAAA-MM-DD)", value=st.session_state.fecha_entrega_original_recalculo, help="Fecha original de entrega para el recálculo.")
+    st.session_state.fecha_entrega_original_recalculo = fecha_entrega_original_date # Update session state on selection
+
+    tienda_rechazo = st.sidebar.number_input("Tienda de Rechazo", value=108, min_value=0, help="ID de la tienda que rechazó el envío.")
+else:
+    st.sidebar.info("Recálculo Desactivado. Haz clic en el botón para activar más opciones.")
+
+
+st.sidebar.markdown("---")
+st.sidebar.header("Pesos de Optimización (Weights)")
+
+
+# Initialize session state for weights if not already present
 for key, value in DEFAULT_WEIGHTS_BAJA.items():
     if key not in st.session_state:
         st.session_state[key] = value
@@ -184,38 +209,61 @@ if 'reset_message_text' not in st.session_state:
 if 'current_preset' not in st.session_state:
     st.session_state.current_preset = 'baja'
 
-inventario_weight = st.sidebar.slider("Inventario", min_value=0.0, max_value=2.0, value=st.session_state.inventario, step=0.1, key='inventario', help="Peso para la optimización por inventario.")
-tiempo_weight = st.sidebar.slider("Tiempo", min_value=0.0, max_value=2.0, value=st.session_state.tiempo, step=0.1, key='tiempo', help="Peso para la optimización por tiempo.")
-costo_weight = st.sidebar.slider("Costo", min_value=0.0, max_value=2.0, value=st.session_state.costo, step=0.1, key='costo', help="Peso para la optimización por costo.")
-nodo_weight = st.sidebar.slider("Nodo", min_value=0.0, max_value=2.0, value=st.session_state.nodo, step=0.1, key='nodo', help="Peso para la optimización por nodo.")
-ruta_weight = st.sidebar.slider("Ruta", min_value=0.0, max_value=2.0, value=st.session_state.ruta, step=0.1, key='ruta', help="Peso para la optimización por ruta.")
-diferencia_weight = st.sidebar.slider("Diferencia (Nueva)", min_value=0.0, max_value=2.0, value=st.session_state.diferencia, step=0.1, key='diferencia', help="Peso para la optimización por diferencia.")
 
-current_slider_values = {
-    "inventario": inventario_weight, "tiempo": tiempo_weight, "costo": costo_weight,
-    "nodo": nodo_weight, "ruta": ruta_weight, "diferencia": diferencia_weight
-}
+# Conditional display of sliders
+if st.session_state.recalculo_enabled:
+    # Only show Diferencia slider when recalculo is active
+    diferencia_weight = st.sidebar.slider("Diferencia (Nueva)", min_value=0.0, max_value=4.0, value=st.session_state.diferencia, step=0.2, key='diferencia', help="Peso para la optimización por diferencia.")
+    
+    # Set other weights to Temporada Alta values (no sliders needed here, as they are fixed)
+    inventario_weight = DEFAULT_WEIGHTS_ALTA["inventario"]
+    tiempo_weight = DEFAULT_WEIGHTS_ALTA["tiempo"]
+    costo_weight = DEFAULT_WEIGHTS_ALTA["costo"]
+    nodo_weight = DEFAULT_WEIGHTS_ALTA["nodo"]
+    ruta_weight = DEFAULT_WEIGHTS_ALTA["ruta"]
+    
+    st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Pesos Fijos: Base Temporada Alta</p>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"Inventario: **{inventario_weight}**")
+    st.sidebar.markdown(f"Tiempo: **{tiempo_weight}**")
+    st.sidebar.markdown(f"Costo: **{costo_weight}**")
+    st.sidebar.markdown(f"Nodo: **{nodo_weight}**")
+    st.sidebar.markdown(f"Ruta: **{ruta_weight}**")
 
-tolerance = 1e-9
-is_baja = all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_BAJA[k]) < tolerance for k in DEFAULT_WEIGHTS_BAJA)
-is_alta = all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_ALTA[k]) < tolerance for k in DEFAULT_WEIGHTS_ALTA)
-
-if is_baja:
-    st.session_state.current_preset = 'baja'
-elif is_alta:
-    st.session_state.current_preset = 'alta'
 else:
-    st.session_state.current_preset = 'custom'
+    # Show all sliders as normal when recalculo is inactive
+    inventario_weight = st.sidebar.slider("Inventario", min_value=0.0, max_value=2.0, value=st.session_state.inventario, step=0.1, key='inventario', help="Peso para la optimización por inventario.")
+    tiempo_weight = st.sidebar.slider("Tiempo", min_value=0.0, max_value=2.0, value=st.session_state.tiempo, step=0.1, key='tiempo', help="Peso para la optimización por tiempo.")
+    costo_weight = st.sidebar.slider("Costo", min_value=0.0, max_value=2.0, value=st.session_state.costo, step=0.1, key='costo', help="Peso para la optimización por costo.")
+    nodo_weight = st.sidebar.slider("Nodo", min_value=0.0, max_value=2.0, value=st.session_state.nodo, step=0.1, key='nodo', help="Peso para la optimización por nodo.")
+    ruta_weight = st.sidebar.slider("Ruta", min_value=0.0, max_value=2.0, value=st.session_state.ruta, step=0.1, key='ruta', help="Peso para la optimización por ruta.")
+    diferencia_weight = 0.0 # When hidden, ensure its value is 0.0 for consistency if used elsewhere
 
-if st.session_state.current_preset == 'baja':
-    st.sidebar.markdown("<p style='color: #87CEEB; font-weight: bold;'>Preset activo: Temporada Baja</p>", unsafe_allow_html=True)
-elif st.session_state.current_preset == 'alta':
-    st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Preset activo: Temporada Alta</p>", unsafe_allow_html=True)
-else:
-    st.sidebar.warning("Pesos: **Custom** (no coinciden con presets)")
+    # Determine current preset status for display (when not in recalculo mode)
+    tolerance = 1e-9
+    current_slider_values = {
+        "inventario": inventario_weight, "tiempo": tiempo_weight, "costo": costo_weight,
+        "nodo": nodo_weight, "ruta": ruta_weight, "diferencia": diferencia_weight
+    }
 
-st.sidebar.button("Temporada Baja", on_click=reset_weights_baja_callback)
-st.sidebar.button("Temporada Alta", on_click=set_weights_alta_callback)
+    is_baja = all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_BAJA[k]) < tolerance for k in DEFAULT_WEIGHTS_BAJA)
+    is_alta = (all(abs(current_slider_values[k] - DEFAULT_WEIGHTS_ALTA[k]) < tolerance for k in DEFAULT_WEIGHTS_ALTA if k != "diferencia") and
+               abs(current_slider_values["diferencia"] - 0.0) < tolerance)
+
+
+    if is_baja:
+        st.session_state.current_preset = 'baja'
+        st.sidebar.markdown("<p style='color: #87CEEB; font-weight: bold;'>Preset activo: Temporada Baja</p>", unsafe_allow_html=True)
+    elif is_alta:
+        st.session_state.current_preset = 'alta'
+        st.sidebar.markdown("<p style='color: #FFD700; font-weight: bold;'>Preset activo: Temporada Alta</p>", unsafe_allow_html=True)
+    else:
+        st.session_state.current_preset = 'custom'
+        st.sidebar.warning("Pesos: **Custom** (no coinciden con presets)")
+
+    # Display preset buttons only when recalculation is OFF
+    st.sidebar.button("Temporada Baja", on_click=reset_weights_baja_callback)
+    st.sidebar.button("Temporada Alta", on_click=set_weights_alta_callback)
+
 
 if st.session_state.show_reset_message:
     st.sidebar.success(st.session_state.reset_message_text)
@@ -231,15 +279,26 @@ if 'scroll_to_bigquery_table' not in st.session_state:
     st.session_state.scroll_to_bigquery_table = False
 if 'selected_route_id_to_scroll' not in st.session_state:
     st.session_state.selected_route_id_to_scroll = None
+if 'rejected_tda_cve' not in st.session_state:
+    st.session_state.rejected_tda_cve = None
+
 
 # --- BigQuery Query Section ---
 st.header("1. Resultados de Rutas")
 
-def highlight_bigquery_results_by_trace_id(row, selected_trace_ids):
+# Updated highlight function
+def highlight_bigquery_results(row, selected_trace_ids, rejected_tda_cve_to_highlight, recalculo_active):
+    styles = [''] * len(row)
+    
+    # Priority 1: Highlight selected API route in yellow
     if 'ID_TRAZO' in row and row['ID_TRAZO'] in selected_trace_ids:
-        return ['background-color: #FFD700; color: #000000'] * len(row)
-    else:
-        return [''] * len(row)
+        styles = ['background-color: #FFD700; color: #000000'] * len(row)
+    # Priority 2: Highlight rejected TDA_CVE in red IF recalculation is active
+    elif recalculo_active and rejected_tda_cve_to_highlight is not None and 'TDA_CVE' in row and row['TDA_CVE'] == rejected_tda_cve_to_highlight:
+        styles = ['background-color: #FF0000; color: #FFFFFF'] * len(row) # Red background, white text
+    
+    return styles
+
 
 if st.button("Consultar Rutas"):
     if sku_input and cp_input:
@@ -248,8 +307,10 @@ if st.button("Consultar Rutas"):
             cp_int = int(cp_input)
             st.session_state.bigquery_df = query_bigquery(sku_int, cp_int)
             st.session_state.bigquery_query_attempted = True
-            st.session_state.api_rutas_response = {}
+            st.session_state.api_rutas_response = {} # Clear API response on new BQ query
             st.session_state.selected_route_id_to_scroll = None
+            st.session_state.rejected_tda_cve = None # Clear rejected TDA_CVE on new BQ query, it will be set by "Calcular Ruta"
+
         except ValueError:
             st.error("Error: SKU y/o Código Postal deben ser valores numéricos enteros para la consulta a BigQuery.")
             st.session_state.bigquery_query_attempted = False
@@ -266,12 +327,14 @@ if not st.session_state.bigquery_df.empty:
         selected_trace_ids = {ruta['id_trazo'] for ruta in st.session_state.api_rutas_response["rutas"]}
         if st.session_state.api_rutas_response["rutas"]:
             st.session_state.selected_route_id_to_scroll = st.session_state.api_rutas_response["rutas"][0]['id_trazo']
-
+    
     st.dataframe(
         st.session_state.bigquery_df.style.apply(
-            highlight_bigquery_results_by_trace_id,
+            highlight_bigquery_results,
             axis=1,
-            selected_trace_ids=selected_trace_ids
+            selected_trace_ids=selected_trace_ids,
+            rejected_tda_cve_to_highlight=st.session_state.rejected_tda_cve, # Pass stored value
+            recalculo_active=st.session_state.recalculo_enabled # Pass recalculation state
         ),
         use_container_width=True,
         hide_index=True
@@ -301,9 +364,16 @@ if st.session_state.api_rutas_response and "api_error_message" in st.session_sta
 if calculate_route_button:
     if sku_input and cp_input and qty_input:
         try:
-            int(sku_input)
-            int(cp_input)
-            
+            sku_int = int(sku_input)
+            cp_int = int(cp_input)
+
+            # --- Validation for Fecha Entrega Original vs Fecha Compra Original ---
+            if st.session_state.recalculo_enabled:
+                if fecha_entrega_original_date < fecha_compra_original_date_fixed:
+                    st.error("Error: La 'Fecha Entrega Original' no puede ser anterior a la 'Fecha Compra Original'. Por favor, ajusta la fecha de entrega.")
+                    st.stop() # Stop execution if validation fails
+            # --- End Validation ---
+
             weights_payload = {
                 "inventario": inventario_weight,
                 "tiempo": tiempo_weight,
@@ -320,11 +390,16 @@ if calculate_route_button:
                     st.stop()
                 
                 data_recalculo_payload = {
-                    "fechaCompraOriginal": fecha_compra_original_date.strftime("%Y-%m-%d"),
+                    "fechaCompraOriginal": fecha_compra_original_date_fixed.strftime("%Y-%m-%d"),
                     "fechaEntregaOriginal": fecha_entrega_original_date.strftime("%Y-%m-%d"),
                     "tiendaRechazo": tienda_rechazo
                 }
-            
+                # Store the tienda_rechazo for highlighting rejected routes after API call
+                st.session_state.rejected_tda_cve = tienda_rechazo
+            else:
+                st.session_state.rejected_tda_cve = None # Clear rejected TDA_CVE if recalculation is off
+
+
             st.session_state.api_rutas_response = call_route_api(
                 sku_input, cp_input, qty_input, weights_payload,
                 recalculo=st.session_state.recalculo_enabled,
@@ -382,31 +457,30 @@ if st.session_state.get('scroll_to_bigquery_table', False) and st.session_state.
 if st.session_state.api_rutas_response and "api_error_message" not in st.session_state.api_rutas_response:
     st.subheader("Visualización de Fechas Clave")
 
-    fecha_compra = datetime.date(2025, 6, 1) # Fixed purchase date for calendar display
-    if st.session_state.recalculo_enabled: # If recalculation is enabled, use its value for calendar display
-        fecha_compra = datetime.date(2025, 6, 1) # This is now fixed in the UI, so it always comes from there.
+    fecha_compra = fecha_compra_original_date_fixed
     
-    fecha_entrega = None
+    # This will be the NEW delivery date from the API response
+    new_fecha_entrega = None 
     
     if st.session_state.api_rutas_response.get("resumen"):
         resumen_data = st.session_state.api_rutas_response["resumen"]
         if "fecha_de_entrega" in resumen_data: 
             try:
-                fecha_entrega = datetime.datetime.strptime(str(resumen_data["fecha_de_entrega"]), "%Y-%m-%d").date()
+                new_fecha_entrega = datetime.datetime.strptime(str(resumen_data["fecha_de_entrega"]), "%Y-%m-%d").date()
             except ValueError:
                 st.warning("Formato de fecha de entrega (fecha_de_entrega) inválido en la respuesta de la API. Se esperaba 'YYYY-MM-DD'.")
         elif "tiempo_maximo_dias" in resumen_data:
             delivery_days = resumen_data["tiempo_maximo_dias"]
-            fecha_entrega = fecha_compra + datetime.timedelta(days=delivery_days)
-            st.info(f"Fecha de entrega aproximada calculada a partir de tiempo_maximo_dias: {fecha_entrega.strftime('%d-%B-%Y')}")
+            new_fecha_entrega = fecha_compra + datetime.timedelta(days=delivery_days)
+            st.info(f"Fecha de entrega aproximada calculada a partir de tiempo_maximo_dias: {new_fecha_entrega.strftime('%d-%B-%Y')}")
 
     cal = calendar.Calendar(firstweekday=6)
     
     display_year = fecha_compra.year
     display_month = fecha_compra.month
-    if fecha_entrega and (fecha_entrega.year != fecha_compra.year or fecha_entrega.month != fecha_compra.month):
-        display_year = fecha_entrega.year
-        display_month = fecha_entrega.month
+    if new_fecha_entrega and (new_fecha_entrega.year != fecha_compra.year or new_fecha_entrega.month != fecha_compra.month):
+        display_year = new_fecha_entrega.year
+        display_month = new_fecha_entrega.month
 
     month_cal = cal.monthdayscalendar(display_year, display_month)
 
@@ -443,14 +517,23 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             background-color: #8B0000; color: #ffffff; font-weight: bold;
             box-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
         }}
-        .calendar-day.highlight-delivery {{
+        .calendar-day.highlight-delivery {{ /* Original green for non-recalc delivery */
             background-color: #006400; color: #ffffff; font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
         }}
-        .calendar-day.highlight-both {{
+        .calendar-day.highlight-both {{ /* Original red+green for non-recalc same day */
             background: linear-gradient(to right, #8B0000 50%, #006400 50%);
             color: #ffffff; font-weight: bold;
             box-shadow: 0 0 8px rgba(0, 100, 0, 0.5), 0 0 8px rgba(139, 0, 0, 0.5);
+        }}
+        .calendar-day.highlight-recalc-new-delivery {{ /* New yellow for recalc new delivery */
+            background-color: #FFD700; color: #000000; font-weight: bold;
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
+        }}
+        .calendar-day.highlight-recalc-same-date {{ /* Split yellow/green for recalc same original delivery */
+            background: linear-gradient(to right, #FFD700 50%, #006400 50%);
+            color: #000000; font-weight: bold;
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.7), 0 0 8px rgba(0, 100, 0, 0.5);
         }}
         .calendar-day .label-container {{
             display: flex; width: 100%; justify-content: center; font-size: 0.65em;
@@ -458,6 +541,11 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
         }}
         .calendar-day .label-combined {{
             color: #ffffff; font-weight: bold; text-align: center;
+        }}
+        /* Ensure text is visible on split background */
+        .calendar-day.highlight-recalc-same-date .label-text {{
+            color: #000000; /* Black text for better contrast on yellow side */
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8); /* Optional: add shadow for readability */
         }}
         @media (max-width: 600px) {{
             .calendar-day {{
@@ -488,22 +576,42 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             if day != 0:
                 current_date = datetime.date(display_year, display_month, day)
 
-            if current_date == fecha_compra and current_date == fecha_entrega:
-                day_classes += " highlight-both"
-                label_content = f"""
-                <div class="label-container">
-                    <span class="label-combined">Mismo Día</span>
-                </div>
-                """
-            elif current_date == fecha_compra:
-                day_classes += " highlight-purchase"
-                label_content = "<small>Compra</small>"
-            elif fecha_entrega and current_date == fecha_entrega:
-                day_classes += " highlight-delivery"
-                label_content = "<small>Entrega</small>"
-            elif day == 0:
+            if current_date == 0:
                 day_classes += " empty"
                 day_number_content = ""
+            else:
+                is_purchase_date = (current_date == fecha_compra)
+                is_new_delivery_date = (new_fecha_entrega and current_date == new_fecha_entrega)
+                is_original_delivery_date_input = (fecha_entrega_original_date and current_date == fecha_entrega_original_date)
+
+                if st.session_state.recalculo_enabled:
+                    if is_new_delivery_date and is_original_delivery_date_input:
+                        day_classes += " highlight-recalc-same-date"
+                        label_content = "<small class='label-text'>Se mantiene fecha</small>"
+                    elif is_new_delivery_date:
+                        day_classes += " highlight-recalc-new-delivery"
+                        label_content = "<small class='label-text'>Nueva Entrega</small>"
+                    
+                    # Purchase date always gets highlighted if it's not already covered by new/same delivery
+                    if is_purchase_date and not (is_new_delivery_date and is_original_delivery_date_input) and not is_new_delivery_date:
+                         day_classes += " highlight-purchase"
+                         if not label_content: # Only add if no other label is present
+                             label_content = "<small>Compra</small>"
+
+                else: # Recalculo is OFF (original logic)
+                    if is_purchase_date and is_new_delivery_date:
+                        day_classes += " highlight-both"
+                        label_content = f"""
+                        <div class="label-container">
+                            <span class="label-combined">Mismo Día</span>
+                        </div>
+                        """
+                    elif is_purchase_date:
+                        day_classes += " highlight-purchase"
+                        label_content = "<small>Compra</small>"
+                    elif is_new_delivery_date:
+                        day_classes += " highlight-delivery"
+                        label_content = "<small>Entrega</small>"
             
             final_day_content = f"{day_number_content}{label_content}" if day != 0 else ""
             
@@ -516,10 +624,13 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
     st.markdown(calendar_html, unsafe_allow_html=True)
 
     st.markdown(f"**Fecha de Compra:** {fecha_compra.strftime('%d-%B-%Y')}")
-    if fecha_entrega:
-        st.markdown(f"**Fecha de Entrega:** {fecha_entrega.strftime('%d-%B-%Y')}")
+    if new_fecha_entrega:
+        st.markdown(f"**Fecha de Entrega (API):** {new_fecha_entrega.strftime('%d-%B-%Y')}")
     else:
-        st.markdown("**Fecha de Entrega:** No disponible o formato inválido en la API.")
+        st.markdown("**Fecha de Entrega (API):** No disponible o formato inválido en la API.")
+    
+    if st.session_state.recalculo_enabled and fecha_entrega_original_date:
+        st.markdown(f"**Fecha de Entrega Original (Input):** {fecha_entrega_original_date.strftime('%d-%B-%Y')}")
 
     st.markdown("---")
     
