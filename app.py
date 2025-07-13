@@ -116,7 +116,7 @@ DEFAULT_WEIGHTS_BAJA = {
 }
 DEFAULT_WEIGHTS_ALTA = {
     "inventario": 0.4, "tiempo": 2.0, "costo": 0.1, "nodo": 0.5, "ruta": 0.5, 
-    "diferencia": 2.0 # Default for when recalculation is ON
+    "diferencia": 4.0 # Default for when recalculation is ON
 }
 
 # Callback functions to reset weights to presets
@@ -153,13 +153,13 @@ if st.sidebar.button("Activar Recálculo" if not st.session_state.recalculo_enab
     st.session_state.recalculo_enabled = not st.session_state.recalculo_enabled
     # When toggling recalculation, adjust weights in session_state immediately
     if st.session_state.recalculo_enabled:
-        # Set all weights to Temporada Alta values, and diferencia to 2.0
+        # Set all weights to Temporada Alta values, and diferencia to 4.0
         st.session_state.inventario = DEFAULT_WEIGHTS_ALTA["inventario"]
         st.session_state.tiempo = DEFAULT_WEIGHTS_ALTA["tiempo"]
         st.session_state.costo = DEFAULT_WEIGHTS_ALTA["costo"]
         st.session_state.nodo = DEFAULT_WEIGHTS_ALTA["nodo"]
         st.session_state.ruta = DEFAULT_WEIGHTS_ALTA["ruta"]
-        st.session_state.diferencia = 2.0 # Explicitly set to 2.0 for recalculo mode
+        st.session_state.diferencia = 4.0 # Explicitly set to 2.0 for recalculo mode
         st.session_state.current_preset = 'recalc_active' # Custom preset state for recalculo
     else:
         # Revert to Temporada Baja defaults when recalculo is off
