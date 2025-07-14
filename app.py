@@ -38,7 +38,8 @@ def query_bigquery(sku_val: int, cp_val: int) -> pd.DataFrame:
 
     project_id = 'liv-dev-dig-chatbot'
     dataset_id = 'Fecha_Estimada_Entrega'
-    source_table_id = 'TB_FEE_RESULTADO_FINAL__tmp'
+    # source_table_id = 'TB_FEE_RESULTADO_FINAL__tmp'
+    source_table_id = 'TB_FEE_RESULTADO_FINAL__JUL14'
 
     source_table = f"`{project_id}.{dataset_id}.{source_table_id}`"
 
@@ -552,6 +553,11 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             color: #000000; font-weight: bold;
             box-shadow: 0 0 8px rgba(255, 215, 0, 0.7), 0 0 8px rgba(0, 100, 0, 0.5);
         }}
+        .calendar-day.highlight-recalc-new-delivery-and-purchase {{ /* New: Red/Yellow split for new delivery and purchase same day */
+            background: linear-gradient(to right, #8B0000 50%, #FFD700 50%);
+            color: #000000; font-weight: bold;
+            box-shadow: 0 0 8px rgba(139, 0, 0, 0.5), 0 0 8px rgba(255, 215, 0, 0.7);
+        }}
         .calendar-day .label-container {{
             display: flex; width: 100%; justify-content: center; font-size: 0.65em;
             line-height: 1; margin-top: 5px;
@@ -560,7 +566,8 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
             color: #ffffff; font-weight: bold; text-align: center;
         }}
         /* Ensure text is visible on split background */
-        .calendar-day.highlight-recalc-same-date .label-text {{
+        .calendar-day.highlight-recalc-same-date .label-text,
+        .calendar-day.highlight-recalc-new-delivery-and-purchase .label-text {{
             color: #000000; /* Black text for better contrast on yellow side */
             text-shadow: 1px 1px 2px rgba(255,255,255,0.8); /* Optional: add shadow for readability */
         }}
@@ -615,7 +622,10 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
                 is_original_delivery_date_input = (fecha_entrega_original_date and current_date == fecha_entrega_original_date)
 
                 if st.session_state.recalculo_enabled:
-                    if is_new_delivery_date and is_original_delivery_date_input:
+                    if is_new_delivery_date and is_purchase_date: # NEW: Red/Yellow split for new delivery and purchase
+                        day_classes += " highlight-recalc-new-delivery-and-purchase"
+                        label_content = "<small class='label-text'>Compra / Nueva Entrega</small>"
+                    elif is_new_delivery_date and is_original_delivery_date_input:
                         day_classes += " highlight-recalc-same-date"
                         label_content = "<small class='label-text'>Se mantiene fecha</small>"
                     elif is_new_delivery_date:
@@ -623,7 +633,7 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
                         label_content = "<small class='label-text'>Nueva Entrega</small>"
                     
                     # Highlight original delivery in green if it's not the new delivery date
-                    if is_original_delivery_date_input and not is_new_delivery_date:
+                    if is_original_delivery_date_input and not is_new_delivery_date and "highlight-recalc-new-delivery-and-purchase" not in day_classes:
                         if "highlight-original-delivery" not in day_classes:
                             day_classes += " highlight-original-delivery"
                         if not label_content:
@@ -632,7 +642,7 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
                             label_content += "<br><small>Entrega Original</small>"
                             
                     # Purchase date always gets highlighted if not already covered by higher priority
-                    if is_purchase_date and "highlight-purchase" not in day_classes and "highlight-recalc-new-delivery" not in day_classes and "highlight-recalc-same-date" not in day_classes:
+                    if is_purchase_date and "highlight-purchase" not in day_classes and "highlight-recalc-new-delivery" not in day_classes and "highlight-recalc-same-date" not in day_classes and "highlight-recalc-new-delivery-and-purchase" not in day_classes:
                         day_classes += " highlight-purchase"
                         if not label_content:
                             label_content = "<small>Compra</small>"
