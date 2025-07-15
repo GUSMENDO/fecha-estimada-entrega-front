@@ -38,7 +38,6 @@ def query_bigquery(sku_val: int, cp_val: int) -> pd.DataFrame:
 
     project_id = 'liv-dev-dig-chatbot'
     dataset_id = 'Fecha_Estimada_Entrega'
-    # source_table_id = 'TB_FEE_RESULTADO_FINAL__tmp'
     source_table_id = 'TB_FEE_RESULTADO_FINAL__JUL14'
 
     source_table = f"`{project_id}.{dataset_id}.{source_table_id}`"
@@ -183,7 +182,6 @@ if st.session_state.recalculo_enabled:
     st.sidebar.text_input("Fecha Compra Original (AAAA-MM-DD)", value=fecha_compra_original_date_fixed.strftime("%Y-%m-%d"), disabled=True, help="Fecha original de compra para el recálculo (no editable).")
     
     # Fecha Entrega Original - Calendar Input
-    # Set default to a date different from purchase for better testing of logic
     if 'fecha_entrega_original_recalculo' not in st.session_state:
         st.session_state.fecha_entrega_original_recalculo = datetime.date(2025, 6, 12) # Default date for calendar
 
@@ -324,6 +322,23 @@ if not st.session_state.bigquery_df.empty:
     st.subheader("Datos de Inventario y Ubicación")
     st.write(f"Número de registros: **{len(st.session_state.bigquery_df)}**")
     
+    # MODIFIED: Logic for inventory total to exclude rejected store if recalculo is active
+    if 'INVENTARIO_OH' in st.session_state.bigquery_df.columns and 'TDA_CVE' in st.session_state.bigquery_df.columns:
+        df_for_inventory_calc = st.session_state.bigquery_df.drop_duplicates(subset=['TDA_CVE']).copy()
+        
+        # Check if recalculation is active AND a rejected_tda_cve has been set (i.e., after a 'Calcular Ruta' click)
+        if st.session_state.recalculo_enabled and st.session_state.rejected_tda_cve is not None:
+            # Filter out the rejected store for inventory calculation
+            df_for_inventory_calc = df_for_inventory_calc[df_for_inventory_calc['TDA_CVE'] != st.session_state.rejected_tda_cve]
+            st.write(f"Inventario total: **{int(df_for_inventory_calc['INVENTARIO_OH'].sum())}** (sin tienda rechazada)")
+        else:
+            st.write(f"Inventario total: **{int(df_for_inventory_calc['INVENTARIO_OH'].sum())}**")
+
+    elif 'INVENTARIO_OH' in st.session_state.bigquery_df.columns:
+        st.write(f"Inventario total: **{int(st.session_state.bigquery_df['INVENTARIO_OH'].sum())}** (No se puede deduplicar por TDA_CVE)")
+    else:
+        st.info("Columna 'INVENTARIO_OH' no encontrada para calcular inventario.")
+
     selected_trace_ids = set()
     if st.session_state.api_rutas_response and st.session_state.api_rutas_response.get("rutas"):
         selected_trace_ids = {ruta['id_trazo'] for ruta in st.session_state.api_rutas_response["rutas"]}
@@ -632,19 +647,21 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
                         day_classes += " highlight-recalc-new-delivery"
                         label_content = "<small class='label-text'>Nueva Entrega</small>"
                     
-                    # Highlight original delivery in green if it's not the new delivery date
-                    if is_original_delivery_date_input and not is_new_delivery_date and "highlight-recalc-new-delivery-and-purchase" not in day_classes:
+                    # Highlight original delivery in green if it's not the new delivery date AND not purchase date
+                    # to avoid over-highlighting if purchase date also on this day
+                    if is_original_delivery_date_input and not is_new_delivery_date and not (is_new_delivery_date and is_purchase_date):
                         if "highlight-original-delivery" not in day_classes:
                             day_classes += " highlight-original-delivery"
-                        if not label_content:
+                        if not label_content or ("Entrega Original" not in label_content and "Compra" not in label_content and "Nueva Entrega" not in label_content): # Ensure not to overwrite other labels
                             label_content = "<small>Entrega Original</small>"
                         elif "Entrega Original" not in label_content:
                             label_content += "<br><small>Entrega Original</small>"
                             
                     # Purchase date always gets highlighted if not already covered by higher priority
-                    if is_purchase_date and "highlight-purchase" not in day_classes and "highlight-recalc-new-delivery" not in day_classes and "highlight-recalc-same-date" not in day_classes and "highlight-recalc-new-delivery-and-purchase" not in day_classes:
-                        day_classes += " highlight-purchase"
-                        if not label_content:
+                    if is_purchase_date and not (is_new_delivery_date and is_purchase_date) and not is_new_delivery_date and not is_original_delivery_date_input:
+                        if "highlight-purchase" not in day_classes: # Ensure it's not added twice
+                            day_classes += " highlight-purchase"
+                        if not label_content or ("Compra" not in label_content and "Entrega Original" not in label_content and "Nueva Entrega" not in label_content):
                             label_content = "<small>Compra</small>"
                         elif "Compra" not in label_content: # Append if another label is there
                              label_content += "<br><small>Compra</small>"
@@ -680,16 +697,21 @@ if st.session_state.api_rutas_response and "api_error_message" not in st.session
     st.markdown("**Leyenda de Fechas:**")
     st.markdown(f'<div class="color-box red"></div> **Roja** Fecha de Compra: {fecha_compra.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
     
-    if st.session_state.recalculo_enabled and fecha_entrega_original_date:
-        st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega Original: {fecha_entrega_original_date.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+    if st.session_state.recalculo_enabled:
+        if fecha_entrega_original_date:
+            st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega Original: {fecha_entrega_original_date.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="color-box green"></div> **Verde** Fecha de Entrega Original: No disponible', unsafe_allow_html=True)
+            
         if new_fecha_entrega:
             st.markdown(f'<div class="color-box yellow"></div> **Amarillo** NUEVA Fecha de Entrega: {new_fecha_entrega.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
         else:
             st.markdown('<div class="color-box yellow"></div> **Amarillo** NUEVA Fecha de Entrega: No disponible', unsafe_allow_html=True)
-    elif new_fecha_entrega: # Non-recalulo mode, regular delivery date
-        st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega: {new_fecha_entrega.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="color-box green"></div> **Verde** Fecha de Entrega: No disponible', unsafe_allow_html=True)
+    else: # Non-recalulo mode
+        if new_fecha_entrega:
+            st.markdown(f'<div class="color-box green"></div> **Verde** Fecha de Entrega: {new_fecha_entrega.strftime("%d-%B-%Y")}', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="color-box green"></div> **Verde** Fecha de Entrega: No disponible', unsafe_allow_html=True)
 
 
     st.markdown("---")
