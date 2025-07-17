@@ -38,7 +38,7 @@ def query_bigquery(sku_val: int, cp_val: int) -> pd.DataFrame:
 
     project_id = 'liv-dev-dig-chatbot'
     dataset_id = 'Fecha_Estimada_Entrega'
-    source_table_id = 'TB_FEE_RESULTADO_FINAL__JUL14'
+    source_table_id = 'TB_FEE_RESULTADO_CON_TIEMPO3_UUID'
 
     source_table = f"`{project_id}.{dataset_id}.{source_table_id}`"
 
